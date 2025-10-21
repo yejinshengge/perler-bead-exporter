@@ -1,0 +1,21 @@
+# Aseprite 临时文件
+*.aseprite~
+*.ase~
+
+# 测试文件
+test/
+temp/
+
+# 系统文件
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDE
+.vscode/
+.idea/
+*.sublime-*
+
+# 日志
+*.log
+

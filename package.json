@@ -1,0 +1,27 @@
+{
+  "name": "perler-bead-exporter",
+  "displayName": "拼豆图纸导出工具",
+  "description": "显示调色板中颜色的名称，并支持导出拼豆图纸",
+  "version": "1.0.0",
+  "author": "yejinshengge",
+  "contributors": [],
+  "publisher": "",
+  "license": "MIT",
+  "categories": [
+    "Scripts"
+  ],
+  "contributes": {
+    "scripts": [
+      {
+        "path": "./color-data.lua"
+      },
+      {
+        "path": "./color-name-display.lua"
+      },
+      {
+        "path": "./export-perler-bead.lua"
+      }
+    ]
+  }
+}
+
