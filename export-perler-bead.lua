@@ -28,16 +28,16 @@ end
 -- 前向声明（在调用前必须先声明）
 local performExport
 
--- 统计颜色使用次数
+-- 统计颜色使用次数（统计所有可见图层）
 local function countColors(sprite)
     -- 确保 getColorName 函数存在
     local getColorName = ShowColorName.getColorName or function(r, g, b) return nil end
     
     local colorCount = {}
-    local layer = sprite.layers[1]
     
+    -- 遍历所有可见图层的cel
     for _, cel in ipairs(sprite.cels) do
-        if cel.layer == layer or not layer then
+        if cel.layer.isVisible then
             local image = cel.image
             for pixel in image:pixels() do
                 local pixelValue = pixel()
@@ -224,18 +224,54 @@ performExport = function(sprite, options)
         totalPixels = totalPixels + item.count
     end
     
-    -- 获取原始图像
-    local cel = sprite.cels[1]
-    if not cel then
-        app.alert("找不到图层内容")
-        return
-    end
-    
-    local sourceImage = cel.image
-    local celX = cel.position.x
-    local celY = cel.position.y
+    -- 创建一个合成图像，包含所有可见图层
     local spriteWidth = sprite.width
     local spriteHeight = sprite.height
+    local compositeImage = Image(spriteWidth, spriteHeight, sprite.colorMode)
+    
+    -- 按照图层顺序从下往上合成（遍历所有图层）
+    for _, layer in ipairs(sprite.layers) do
+        if layer.isVisible then
+            -- 找到这个图层对应的cel
+            for _, cel in ipairs(sprite.cels) do
+                if cel.layer == layer then
+                    local celImage = cel.image
+                    local celX = cel.position.x
+                    local celY = cel.position.y
+                    
+                    -- 将cel绘制到合成图像上（只绘制非透明像素）
+                    for y = 0, celImage.height - 1 do
+                        for x = 0, celImage.width - 1 do
+                            local pixelValue = celImage:getPixel(x, y)
+                            local globalX = celX + x
+                            local globalY = celY + y
+                            
+                            -- 检查是否在sprite范围内
+                            if globalX >= 0 and globalX < spriteWidth and 
+                               globalY >= 0 and globalY < spriteHeight then
+                                
+                                -- 检查像素是否透明
+                                local isTransparent = false
+                                if sprite.colorMode == ColorMode.RGB then
+                                    local alpha = app.pixelColor.rgbaA(pixelValue)
+                                    isTransparent = (alpha == 0)
+                                elseif sprite.colorMode == ColorMode.INDEXED then
+                                    isTransparent = (pixelValue == sprite.transparentColor)
+                                end
+                                
+                                -- 只绘制非透明像素
+                                if not isTransparent then
+                                    compositeImage:putPixel(globalX, globalY, pixelValue)
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+    
+    local sourceImage = compositeImage
     
     -- 生成HTML
     local html = [[
@@ -273,11 +309,28 @@ performExport = function(sprite, options)
             border: 1px solid #999;
             text-align: center;
             vertical-align: middle;
-            padding: 2px;
+            padding: 0;
             font-size: ]] .. fontSize .. [[px;
             width: ]] .. cellSize .. [[px;
             height: ]] .. cellSize .. [[px;
+            min-width: ]] .. cellSize .. [[px;
+            min-height: ]] .. cellSize .. [[px;
+            max-width: ]] .. cellSize .. [[px;
+            max-height: ]] .. cellSize .. [[px;
             position: relative;
+            box-sizing: border-box;
+        }
+        table.pixel-grid td.border-left {
+            border-left: 3px solid #333;
+        }
+        table.pixel-grid td.border-right {
+            border-right: 3px solid #333;
+        }
+        table.pixel-grid td.border-top {
+            border-top: 3px solid #333;
+        }
+        table.pixel-grid td.border-bottom {
+            border-bottom: 3px solid #333;
         }
         table.pixel-grid td.empty {
             background-color: #fff;
@@ -342,7 +395,21 @@ performExport = function(sprite, options)
             margin-top: 0;
             color: #0066cc;
         }
+        .export-btn {
+            background-color: #4CAF50;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            margin: 10px 0;
+        }
+        .export-btn:hover {
+            background-color: #45a049;
+        }
     </style>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 </head>
 <body>
     <div class="container">
@@ -354,6 +421,8 @@ performExport = function(sprite, options)
             <p><strong>总像素数:</strong> ]] .. totalPixels .. [[</p>
             <p><strong>颜色种类:</strong> ]] .. #colorList .. [[</p>
         </div>
+        
+        <button class="export-btn" onclick="exportAsImage()">导出为图片</button>
         
         <div class="grid-container">
             <table class="pixel-grid">
@@ -379,70 +448,84 @@ performExport = function(sprite, options)
         end
         
         for x = 0, spriteWidth - 1 do
-            -- 计算相对于cel的坐标
-            local celLocalX = x - celX
-            local celLocalY = y - celY
+            local pixelValue = sourceImage:getPixel(x, y)
             
-            -- 检查是否在cel范围内
-            local isInCel = celLocalX >= 0 and celLocalX < sourceImage.width and
-                           celLocalY >= 0 and celLocalY < sourceImage.height
+            -- 检查透明像素
+            local isTransparent = false
+            if sprite.colorMode == ColorMode.RGB then
+                -- RGB模式：检查alpha通道
+                local alpha = app.pixelColor.rgbaA(pixelValue)
+                isTransparent = (alpha == 0)
+            elseif sprite.colorMode == ColorMode.INDEXED then
+                -- 索引模式：检查是否是透明色索引或mask color
+                isTransparent = (pixelValue == sprite.transparentColor)
+            end
             
-            if not isInCel then
-                -- 超出cel范围，显示为空
-                html = html .. '                    <td class="empty"></td>\n'
+            -- 判断是否需要添加粗边框（每10格一组）
+            local borderClasses = {}
+            if x % 10 == 0 then
+                table.insert(borderClasses, "border-left")
+            end
+            if (x + 1) % 10 == 0 then
+                table.insert(borderClasses, "border-right")
+            end
+            if y % 10 == 0 then
+                table.insert(borderClasses, "border-top")
+            end
+            if (y + 1) % 10 == 0 then
+                table.insert(borderClasses, "border-bottom")
+            end
+            
+            -- 构建边框类字符串
+            local borderClassStr = ""
+            if #borderClasses > 0 then
+                borderClassStr = ' class="' .. table.concat(borderClasses, " ") .. '"'
+            end
+            
+            if isTransparent then
+                -- 空格子：添加empty类和边框类
+                local emptyClassStr = ' class="empty'
+                if #borderClasses > 0 then
+                    emptyClassStr = emptyClassStr .. ' ' .. table.concat(borderClasses, " ")
+                end
+                emptyClassStr = emptyClassStr .. '"'
+                html = html .. '                    <td' .. emptyClassStr .. '></td>\n'
             else
-                local pixelValue = sourceImage:getPixel(celLocalX, celLocalY)
+                local r, g, b
                 
-                -- 检查透明像素
-                local isTransparent = false
                 if sprite.colorMode == ColorMode.RGB then
-                    -- RGB模式：检查alpha通道
-                    local alpha = app.pixelColor.rgbaA(pixelValue)
-                    isTransparent = (alpha == 0)
+                    r = app.pixelColor.rgbaR(pixelValue)
+                    g = app.pixelColor.rgbaG(pixelValue)
+                    b = app.pixelColor.rgbaB(pixelValue)
                 elseif sprite.colorMode == ColorMode.INDEXED then
-                    -- 索引模式：检查是否是透明色索引或mask color
-                    isTransparent = (pixelValue == sprite.transparentColor)
-                end
-                
-                if isTransparent then
-                    html = html .. '                    <td class="empty"></td>\n'
+                    local paletteColor = sprite.palettes[1]:getColor(pixelValue)
+                    -- Color对象的属性已经是数字，直接使用
+                    r = paletteColor.red
+                    g = paletteColor.green
+                    b = paletteColor.blue
                 else
-                    local r, g, b
-                    
-                    if sprite.colorMode == ColorMode.RGB then
-                        r = app.pixelColor.rgbaR(pixelValue)
-                        g = app.pixelColor.rgbaG(pixelValue)
-                        b = app.pixelColor.rgbaB(pixelValue)
-                    elseif sprite.colorMode == ColorMode.INDEXED then
-                        local paletteColor = sprite.palettes[1]:getColor(pixelValue)
-                        -- Color对象的属性已经是数字，直接使用
-                        r = paletteColor.red
-                        g = paletteColor.green
-                        b = paletteColor.blue
-                    else
-                        r = app.pixelColor.rgbaR(pixelValue)
-                        g = app.pixelColor.rgbaG(pixelValue)
-                        b = app.pixelColor.rgbaB(pixelValue)
-                    end
-                
-                    local bgColor = rgbToHex(r, g, b)
-                    local brightness = getBrightness(r, g, b)
-                    local textColor = brightness > 128 and "#000" or "#fff"
-                    
-                    local colorName = getColorName(r, g, b) or "未命名"
-                    
-                    html = html .. '                    <td style="background-color: ' .. bgColor .. '; color: ' .. textColor .. ';">\n'
-                    
-                    if showColorName then
-                        html = html .. '                        <span class="color-name">' .. colorName .. '</span>\n'
-                    end
-                    
-                    if showColorCode then
-                        html = html .. '                        <span class="color-code">' .. bgColor .. '</span>\n'
-                    end
-                    
-                    html = html .. '                    </td>\n'
+                    r = app.pixelColor.rgbaR(pixelValue)
+                    g = app.pixelColor.rgbaG(pixelValue)
+                    b = app.pixelColor.rgbaB(pixelValue)
                 end
+            
+                local bgColor = rgbToHex(r, g, b)
+                local brightness = getBrightness(r, g, b)
+                local textColor = brightness > 128 and "#000" or "#fff"
+                
+                local colorName = getColorName(r, g, b) or "未命名"
+                
+                html = html .. '                    <td style="background-color: ' .. bgColor .. '; color: ' .. textColor .. ';"' .. borderClassStr .. '>\n'
+                
+                if showColorName then
+                    html = html .. '                        <span class="color-name">' .. colorName .. '</span>\n'
+                end
+                
+                if showColorCode then
+                    html = html .. '                        <span class="color-code">' .. bgColor .. '</span>\n'
+                end
+                
+                html = html .. '                    </td>\n'
             end
         end
         
@@ -491,6 +574,36 @@ performExport = function(sprite, options)
             </table>
         </div>
     </div>
+    
+    <script>
+        function exportAsImage() {
+            const container = document.querySelector('.container');
+            const button = document.querySelector('.export-btn');
+            
+            // 隐藏导出按钮
+            button.style.display = 'none';
+            
+            html2canvas(container, {
+                backgroundColor: '#f5f5f5',
+                scale: 2,
+                logging: false,
+                useCORS: true
+            }).then(function(canvas) {
+                // 创建下载链接
+                const link = document.createElement('a');
+                link.download = 'perler-bead-pattern.png';
+                link.href = canvas.toDataURL('image/png');
+                link.click();
+                
+                // 恢复按钮显示
+                button.style.display = 'block';
+            }).catch(function(error) {
+                console.error('导出失败:', error);
+                alert('导出失败，请检查浏览器控制台');
+                button.style.display = 'block';
+            });
+        }
+    </script>
 </body>
 </html>
 ]]
