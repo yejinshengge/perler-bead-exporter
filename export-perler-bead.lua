@@ -140,7 +140,7 @@ local function exportPerlerBead()
     dlg:number{
         id="cell_size",
         label="网格大小（像素）:",
-        text="40",
+        text="30",
         decimals=0
     }
     
@@ -151,22 +151,9 @@ local function exportPerlerBead()
     }
     
     dlg:check{
-        id="show_color_code",
-        label="显示颜色代码",
-        selected=true
-    }
-    
-    dlg:check{
         id="show_coordinates",
         label="显示坐标",
         selected=true
-    }
-    
-    dlg:number{
-        id="font_size",
-        label="字体大小:",
-        text="10",
-        decimals=0
     }
     
     dlg:file{
@@ -202,16 +189,34 @@ performExport = function(sprite, options)
     -- 确保 getColorName 函数存在
     local getColorName = ShowColorName.getColorName or function(r, g, b) return nil end
     
-    local cellSize = options.cell_size or 40
+    local cellSize = options.cell_size or 30
     local showColorName = options.show_color_name
-    local showColorCode = options.show_color_code
+    local showColorCode = false  -- 默认不显示颜色代码
     local showCoordinates = options.show_coordinates
-    local fontSize = options.font_size or 10
     local savePath = options.save_path
     
     if not savePath or savePath == "" then
         app.alert("请选择保存路径")
         return
+    end
+    
+    -- 根据格子大小自动计算合适的字体大小
+    local fontSize
+    if cellSize <= 20 then
+        fontSize = 9
+    elseif cellSize <= 30 then
+        fontSize = 10
+    elseif cellSize <= 40 then
+        fontSize = 11
+    elseif cellSize <= 50 then
+        fontSize = 12
+    elseif cellSize <= 60 then
+        fontSize = 13
+    elseif cellSize <= 80 then
+        fontSize = 14
+    else
+        -- 大于80的情况下，每增加20像素，字体增加1
+        fontSize = 14 + math.floor((cellSize - 80) / 20)
     end
     
     -- 统计颜色
@@ -302,26 +307,31 @@ performExport = function(sprite, options)
             overflow-x: auto;
         }
         table.pixel-grid {
-            border-collapse: collapse;
+            border-collapse: separate;
+            border-spacing: 0;
             margin: 0 auto;
             table-layout: fixed;
         }
-        table.pixel-grid td {
+        table.pixel-grid td,
+        table.pixel-grid th {
             border: 1px solid #999;
             text-align: center;
             vertical-align: middle;
-            padding: 0;
+            padding: 0 !important;
+            margin: 0 !important;
             font-size: ]] .. fontSize .. [[px;
-            width: ]] .. cellSize .. [[px;
-            height: ]] .. cellSize .. [[px;
-            min-width: ]] .. cellSize .. [[px;
-            min-height: ]] .. cellSize .. [[px;
-            max-width: ]] .. cellSize .. [[px;
-            max-height: ]] .. cellSize .. [[px;
-            position: relative;
-            box-sizing: border-box;
+            width: ]] .. cellSize .. [[px !important;
+            height: ]] .. cellSize .. [[px !important;
+            min-width: ]] .. cellSize .. [[px !important;
+            min-height: ]] .. cellSize .. [[px !important;
+            max-width: ]] .. cellSize .. [[px !important;
+            max-height: ]] .. cellSize .. [[px !important;
+            box-sizing: border-box !important;
             white-space: nowrap;
             overflow: hidden;
+            display: table-cell !important;
+            line-height: 1em;
+            aspect-ratio: 1 / 1;
         }
         table.pixel-grid td.border-left {
             border-left: 3px solid #333;
@@ -346,23 +356,29 @@ performExport = function(sprite, options)
             background-position: 0 0, 0 5px, 5px -5px, -5px 0px;
         }
         table.pixel-grid th {
-            background-color: #f0f0f0;
-            border: 1px solid #999;
-            padding: 5px;
-            font-size: ]] .. (fontSize - 1) .. [[px;
+            background-color: #f0f0f0 !important;
             font-weight: bold;
-            width: ]] .. cellSize .. [[px;
-            min-width: ]] .. cellSize .. [[px;
+            font-size: ]] .. (fontSize - 1) .. [[px !important;
         }
         .color-name {
-            display: block;
+            display: block !important;
             font-weight: bold;
             text-shadow: 0 0 3px rgba(255,255,255,0.8);
+            margin: 0 !important;
+            padding: 0 !important;
+            line-height: 1em !important;
+            max-height: 50%;
+            overflow: hidden;
         }
         .color-code {
-            display: block;
+            display: block !important;
             font-size: ]] .. (fontSize - 2) .. [[px;
             text-shadow: 0 0 3px rgba(255,255,255,0.8);
+            margin: 0 !important;
+            padding: 0 !important;
+            line-height: 1em !important;
+            max-height: 50%;
+            overflow: hidden;
         }
         .stats {
             margin-top: 30px;
@@ -431,14 +447,25 @@ performExport = function(sprite, options)
         
         <div class="grid-container">
             <table class="pixel-grid">
+                <colgroup>
 ]]
+    
+    -- 添加列宽定义
+    if showCoordinates then
+        html = html .. "                    <col style=\"width: " .. cellSize .. "px;\">\n"
+    end
+    for x = 0, spriteWidth - 1 do
+        html = html .. "                    <col style=\"width: " .. cellSize .. "px;\">\n"
+    end
+    
+    html = html .. "                </colgroup>\n"
     
     -- 添加坐标行
     if showCoordinates then
         html = html .. "                <tr>\n"
         html = html .. "                    <th></th>\n"
         for x = 0, spriteWidth - 1 do
-            html = html .. "                    <th>" .. x .. "</th>\n"
+            html = html .. "                    <th>" .. (x + 1) .. "</th>\n"
         end
         html = html .. "                </tr>\n"
     end
@@ -449,7 +476,7 @@ performExport = function(sprite, options)
         
         -- 添加行坐标
         if showCoordinates then
-            html = html .. "                    <th>" .. y .. "</th>\n"
+            html = html .. "                    <th>" .. (y + 1) .. "</th>\n"
         end
         
         for x = 0, spriteWidth - 1 do
