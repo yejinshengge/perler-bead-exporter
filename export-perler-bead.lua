@@ -304,6 +304,7 @@ performExport = function(sprite, options)
         table.pixel-grid {
             border-collapse: collapse;
             margin: 0 auto;
+            table-layout: fixed;
         }
         table.pixel-grid td {
             border: 1px solid #999;
@@ -319,6 +320,8 @@ performExport = function(sprite, options)
             max-height: ]] .. cellSize .. [[px;
             position: relative;
             box-sizing: border-box;
+            white-space: nowrap;
+            overflow: hidden;
         }
         table.pixel-grid td.border-left {
             border-left: 3px solid #333;
@@ -348,6 +351,8 @@ performExport = function(sprite, options)
             padding: 5px;
             font-size: ]] .. (fontSize - 1) .. [[px;
             font-weight: bold;
+            width: ]] .. cellSize .. [[px;
+            min-width: ]] .. cellSize .. [[px;
         }
         .color-name {
             display: block;
